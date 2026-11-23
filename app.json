@@ -11,7 +11,7 @@
       "supportsTablet": true
     },
     "android": {
-        "package": "com.gourab2003.pageturn",
+      "package": "com.gourab2003.pageturn",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,6 +27,16 @@
       "expo-router",
       "expo-status-bar",
       "expo-asset"
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "ade53307-b005-45fa-b717-8aa726e4f7a4"
+      }
+    }
   }
 }
