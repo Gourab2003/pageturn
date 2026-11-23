@@ -1,0 +1,87 @@
+:root {
+  --bg: #e3d7bf;
+  --paper: #f4ecd8;
+  --ink: #5b4636;
+  --page-filter: none;
+  --page-blend: multiply;
+  --book-filter: none;
+  --crease: rgba(0, 0, 0, 0.12);
+}
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+  touch-action: none;
+  transition: background-color 0.25s ease;
+}
+#stage {
+  position: fixed;
+  inset: 0;
+  padding: 10px 0;
+  box-sizing: border-box;
+}
+#book {
+  width: 100%;
+  height: 100%;
+  filter: var(--book-filter);
+}
+/* page-flip sizes itself from padding-bottom when autoSize is on; we use a fixed full-screen stage instead */
+#book .stf__wrapper {
+  height: 100% !important;
+  padding-bottom: 0 !important;
+}
+.page {
+  background: var(--paper);
+  overflow: hidden;
+  isolation: isolate;
+}
+.page .ph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+  opacity: 0.35;
+  font: 600 15px Georgia, 'Times New Roman', serif;
+  letter-spacing: 0.5px;
+}
+.page img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: var(--page-filter);
+  mix-blend-mode: var(--page-blend);
+  pointer-events: none;
+  -webkit-user-drag: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.page img.ready { opacity: 1; }
+/* Book gutter: soft shadow on the binding edge + a faint highlight on the fore-edge */
+.page::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  background:
+    linear-gradient(to right, var(--crease) 0%, rgba(0, 0, 0, 0) 5%),
+    linear-gradient(to left, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0) 2%);
+}
+.page.error .ph { opacity: 0.6; font-size: 13px; padding: 24px; text-align: center; }
+
+.page.loaded .ph { visibility: hidden; }
+/* The back of a curling page: faint mirror image of the print, like thin paper */
+.page.back .ph { display: none; }
+.page.back img { transform: scaleX(-1); opacity: 0.1 !important; }
+.page.back::after {
+  background: linear-gradient(to left, var(--crease) 0%, rgba(0, 0, 0, 0) 6%);
+}

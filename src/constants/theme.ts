@@ -19,27 +19,37 @@ export type ReaderThemeName = 'day' | 'sepia' | 'night';
 export interface ReaderTheme {
   name: ReaderThemeName;
   label: string;
-  background: string; // area around the page
-  paper: string;      // page colour
-  text: string;       // UI text on top of the reader
+  background: string;  // around the page
+  paper: string;       // page colour
+  text: string;        // reader UI text / icons
   accent: string;
-  pdfFilter: string;  // CSS filter applied to rendered PDF pages
+  chrome: string;      // top/bottom control bars
+  statusBar: 'light' | 'dark';
+  // How PDF pages are drawn onto the paper (CSS, inside the WebView):
+  pageFilter: string;
+  pageBlend: 'normal' | 'multiply' | 'screen';
+  crease: string;      // gutter shadow colour
 }
 
 export const readerThemes: Record<ReaderThemeName, ReaderTheme> = {
   day: {
     name: 'day', label: 'Day',
-    background: '#EDEDED', paper: '#FFFFFF', text: '#1A1A1A', accent: '#B5562B',
-    pdfFilter: 'none',
+    background: '#ECEAE6', paper: '#FFFFFF', text: '#1A1A1A', accent: '#B5562B',
+    chrome: 'rgba(255,255,255,0.97)', statusBar: 'dark',
+    pageFilter: 'none', pageBlend: 'normal', crease: 'rgba(0,0,0,0.10)',
   },
   sepia: {
     name: 'sepia', label: 'Sepia',
     background: '#E3D7BF', paper: '#F4ECD8', text: '#5B4636', accent: '#8B5A2B',
-    pdfFilter: 'sepia(0.35) brightness(0.97)',
+    chrome: 'rgba(244,236,216,0.97)', statusBar: 'dark',
+    // multiply: white paper takes the sepia tone, black ink stays black
+    pageFilter: 'none', pageBlend: 'multiply', crease: 'rgba(91,70,54,0.18)',
   },
   night: {
     name: 'night', label: 'Night',
     background: '#0E0E0E', paper: '#1C1C1C', text: '#E6E1D8', accent: '#D98A5F',
-    pdfFilter: 'invert(0.9) hue-rotate(180deg)',
+    chrome: 'rgba(24,24,24,0.97)', statusBar: 'light',
+    // invert ink/paper, keep colours roughly right, soften the white text
+    pageFilter: 'invert(1) hue-rotate(180deg) brightness(0.86)', pageBlend: 'screen', crease: 'rgba(0,0,0,0.45)',
   },
 };

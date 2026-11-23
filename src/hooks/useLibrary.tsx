@@ -70,7 +70,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const importBooks = useCallback(async (): Promise<ImportResult | null> => {
     const result = await DocumentPicker.getDocumentAsync({
       type: 'application/pdf',
-      copyToCacheDirectory: true,
+      // false = give us Android's content:// URI and let expo-file-system copy it.
+      // (true copies into a cache folder that Expo Go's sandbox blocks — "Missing 'READ' permission".)
+      copyToCacheDirectory: false,
       multiple: true,
     });
     if (result.canceled || !result.assets?.length) return null;

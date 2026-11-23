@@ -28,7 +28,11 @@ export function bookFileExists(fileName: string): boolean {
   }
 }
 
-/** Copies a picked PDF into permanent storage. Returns the stored name and real size. */
+/**
+ * Copies a picked PDF into permanent storage. Returns the stored name and real size.
+ * `sourceUri` is the content:// URI straight from Android's document picker.
+ * We never delete the source: it is the user's original file.
+ */
 export async function copyPdfIntoLibrary(
   sourceUri: string,
   id: string,
@@ -38,13 +42,6 @@ export async function copyPdfIntoLibrary(
   const destination = new File(getBooksDir(), fileName);
 
   await source.copy(destination, { overwrite: true });
-
-  // The picker's temporary copy lives in the cache — tidy it up.
-  try {
-    if (source.exists) source.delete();
-  } catch {
-    // not fatal
-  }
 
   return { fileName, sizeBytes: destination.size ?? 0 };
 }

@@ -1,0 +1,9 @@
+{
+  "name": "pageturn-reader-web",
+  "private": true,
+  "description": "Web libraries bundled into the offline reader WebView (not part of the RN bundle).",
+  "dependencies": {
+    "pdfjs-dist": "6.5.438",
+    "page-flip": "2.0.7"
+  }
+}
