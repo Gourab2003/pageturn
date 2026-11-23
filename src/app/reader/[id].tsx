@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, ActivityIndicator, Animated, StyleSheet } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, Animated, AppState, StyleSheet } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationBar } from 'expo-navigation-bar';
@@ -73,15 +73,47 @@ export default function ReaderScreen() {
 
   const bookId = book?.id;
   const knownTotal = book?.totalPages;
+
+  // ── Reading position: saved shortly after each page turn, and immediately
+  //    when leaving the book or when the app goes to the background. ──
+  const pageRef = useRef(book?.lastPage ?? 1);
+  const savedPageRef = useRef(book?.lastPage ?? 1);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const savePosition = useCallback(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    if (!bookId || pageRef.current === savedPageRef.current) return;
+    savedPageRef.current = pageRef.current;
+    updateBook(bookId, { lastPage: pageRef.current, lastOpenedAt: Date.now() });
+  }, [bookId, updateBook]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') savePosition();
+    });
+    return () => {
+      sub.remove();
+      savePosition(); // leaving the reader
+    };
+  }, [savePosition]);
+
   const handleLoaded = useCallback((total: number, p: number) => {
     setTotalPages(total);
     setPage(p);
+    pageRef.current = p; // may differ from the saved page if the PDF has fewer pages
     setStatus('ready');
     if (bookId && knownTotal !== total) updateBook(bookId, { totalPages: total });
   }, [bookId, knownTotal, updateBook]);
 
-  // Phase 4 will auto-save this page number to the library.
-  const handlePageChange = useCallback((p: number) => setPage(p), []);
+  const handlePageChange = useCallback((p: number) => {
+    setPage(p);
+    pageRef.current = p;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(savePosition, 800);
+  }, [savePosition]);
   const handleToggleControls = useCallback(() => setControlsVisible((v) => !v), []);
   const handleError = useCallback((message: string) => {
     setErrorMessage(message);

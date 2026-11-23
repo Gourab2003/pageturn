@@ -60,9 +60,9 @@
           case 'open': openBook(msg); break;
           case 'range': onRange(msg); break;
           case 'rangeError': onRangeError(msg); break;
-          case 'goto': goTo(msg.page); break;
-          case 'next': if (S.flip && S.flipState === 'read') S.flip.flipNext('bottom'); break;
-          case 'prev': if (S.flip && S.flipState === 'read') S.flip.flipPrev('bottom'); break;
+          case 'goto': exitZoom(true); goTo(msg.page); break;
+          case 'next': exitZoom(true); if (S.flip && S.flipState === 'read') S.flip.flipNext('bottom'); break;
+          case 'prev': exitZoom(true); if (S.flip && S.flipState === 'read') S.flip.flipPrev('bottom'); break;
           case 'appearance': applyAppearance(msg.appearance); break;
         }
       } catch (e) {
@@ -316,6 +316,7 @@
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
       if (!S.flip) return;
+      exitZoom(true);
       var key = rectKey();
       if (key === S.lastRect) return;
       S.lastRect = key;
@@ -422,6 +423,209 @@
     st.setProperty('--book-filter', f.length ? f.join(' ') : 'none');
   }
 
+  // ------------------------- pinch to zoom -------------------------
+  // Two fingers on the page open a zoom layer showing the current page. While it is open,
+  // ALL touches go to the zoom layer (page-flip never sees them): pinch to zoom, drag to pan,
+  // tap to show/hide controls, double-tap or pinch back to 100% to return to page turning.
+  // When a gesture ends, the page is re-rendered sharply at the new zoom level.
+  var MAX_ZOOM = 6;
+  var MAX_ZOOM_PIXELS = 10e6;
+  var Z = {
+    active: false, exiting: false, page: 0,
+    s: 1, x: 0, y: 0, L: 0, T: 0, W: 0, H: 0,
+    gesture: null, lastTap: 0, tapTimer: null,
+    hiUrl: null, hiScale: 0, hiGen: 0, hiTimer: null,
+    el: null, inner: null, img: null,
+  };
+
+  function setupZoom() {
+    Z.el = document.createElement('div');
+    Z.el.id = 'zoom';
+    Z.inner = document.createElement('div');
+    Z.inner.className = 'zpage';
+    Z.img = document.createElement('img');
+    Z.img.alt = '';
+    Z.inner.appendChild(Z.img);
+    Z.el.appendChild(Z.inner);
+    document.body.appendChild(Z.el);
+    ['touchstart', 'touchmove', 'touchend', 'touchcancel'].forEach(function (t) {
+      window.addEventListener(t, onZoomTouch, { capture: true, passive: false });
+    });
+  }
+
+  function onZoomTouch(e) {
+    if (!Z.active) {
+      var canStart = e.type === 'touchstart' && e.touches.length === 2 &&
+        S.flip && S.flipState === 'read' && S.urls[S.current];
+      if (!canStart) return; // normal page-turn handling
+      if (!enterZoom()) return;
+    }
+    e.stopPropagation();
+    if (e.cancelable) e.preventDefault();
+    if (Z.exiting) return;
+
+    var p = points(e);
+    if (e.type === 'touchmove') moveGesture(p);
+    else if (p.length > 0) beginGesture(p); // a finger went down or up: re-anchor
+    else endGesture();
+  }
+
+  function enterZoom() {
+    var r = S.pageEls[S.current].getBoundingClientRect();
+    if (!r.width || !r.height) return false;
+    // Cancel whatever page-flip and the tap detector started with the first finger.
+    try { S.flip.isUserTouch = false; S.flip.ui.touchPoint = null; } catch (err) { /* ignore */ }
+    touch = null;
+
+    Z.page = S.current;
+    Z.L = r.left; Z.T = r.top; Z.W = r.width; Z.H = r.height;
+    Z.s = 1; Z.x = r.left; Z.y = r.top;
+    Z.hiScale = 0;
+    Z.gesture = null;
+    Z.inner.style.width = r.width + 'px';
+    Z.inner.style.height = r.height + 'px';
+    Z.inner.style.transition = 'none';
+    Z.img.src = S.urls[S.current];
+    applyZoom();
+    Z.el.style.display = 'block';
+    Z.active = true;
+    return true;
+  }
+
+  function exitZoom(immediate) {
+    if (!Z.active || (Z.exiting && !immediate)) return;
+    Z.exiting = true;
+    Z.hiGen++;
+    clearTimeout(Z.hiTimer);
+    clearTimeout(Z.tapTimer);
+    function done() {
+      Z.el.style.display = 'none';
+      Z.active = false;
+      Z.exiting = false;
+      Z.gesture = null;
+      Z.img.removeAttribute('src');
+      if (Z.hiUrl) { URL.revokeObjectURL(Z.hiUrl); Z.hiUrl = null; }
+    }
+    Z.s = 1; Z.x = Z.L; Z.y = Z.T;
+    if (immediate) { done(); return; }
+    Z.inner.style.transition = 'transform 0.2s ease-out';
+    applyZoom();
+    setTimeout(done, 210);
+  }
+
+  function points(e) {
+    var out = [];
+    for (var i = 0; i < e.touches.length; i++) out.push({ x: e.touches[i].clientX, y: e.touches[i].clientY });
+    return out;
+  }
+  function mid(a, b) { return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; }
+  function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+  function beginGesture(p) {
+    var prev = Z.gesture;
+    var g = {
+      s0: Z.s, x0: Z.x, y0: Z.y,
+      startTime: prev ? prev.startTime : Date.now(),
+      startPt: prev ? prev.startPt : p[0],
+      maxTouches: Math.max(prev ? prev.maxTouches : 0, p.length),
+      moved: prev ? prev.moved : false,
+    };
+    if (p.length >= 2) {
+      g.m0 = mid(p[0], p[1]);
+      g.d0 = dist(p[0], p[1]) || 1;
+      g.c = { x: (g.m0.x - Z.x) / Z.s, y: (g.m0.y - Z.y) / Z.s }; // page point under the fingers
+    } else {
+      g.p0 = p[0];
+    }
+    Z.gesture = g;
+    Z.inner.style.transition = 'none';
+  }
+
+  function moveGesture(p) {
+    var g = Z.gesture;
+    if (!g || !p.length) return;
+    if (p.length >= 2 && g.m0) {
+      var m = mid(p[0], p[1]);
+      var s = clamp(g.s0 * dist(p[0], p[1]) / g.d0, 0.7, MAX_ZOOM);
+      Z.s = s;
+      Z.x = m.x - s * g.c.x;
+      Z.y = m.y - s * g.c.y;
+      g.moved = true;
+    } else if (g.p0) {
+      Z.x = g.x0 + (p[0].x - g.p0.x);
+      Z.y = g.y0 + (p[0].y - g.p0.y);
+      if (Math.hypot(p[0].x - g.startPt.x, p[0].y - g.startPt.y) > 10) g.moved = true;
+    }
+    constrain(false);
+    applyZoom();
+  }
+
+  function endGesture() {
+    var g = Z.gesture;
+    Z.gesture = null;
+    var isTap = g && !g.moved && g.maxTouches === 1 && Date.now() - g.startTime < 300;
+    if (isTap) {
+      var now = Date.now();
+      if (now - Z.lastTap < 320) {         // double-tap: back to normal reading
+        clearTimeout(Z.tapTimer);
+        Z.lastTap = 0;
+        exitZoom(false);
+      } else {                              // single tap: show/hide controls
+        Z.lastTap = now;
+        Z.tapTimer = setTimeout(function () { post({ type: 'toggleControls' }); }, 320);
+      }
+      return;
+    }
+    if (Z.s < 1.05) { exitZoom(false); return; }
+    constrain(true);
+    Z.inner.style.transition = 'transform 0.18s ease-out';
+    applyZoom();
+    clearTimeout(Z.hiTimer);
+    Z.hiTimer = setTimeout(renderZoomSharp, 220);
+  }
+
+  /** Keep the page covering the screen (or centred when smaller than it). */
+  function constrain(hard) {
+    if (!hard && Z.s < 1) return; // allow a little shrink while pinching in
+    var vw = window.innerWidth, vh = window.innerHeight;
+    var w = Z.W * Z.s, h = Z.H * Z.s;
+    Z.x = w <= vw ? (vw - w) / 2 : clamp(Z.x, vw - w, 0);
+    Z.y = h <= vh ? (vh - h) / 2 : clamp(Z.y, vh - h, 0);
+  }
+
+  function applyZoom() {
+    Z.inner.style.transform = 'translate3d(' + Z.x + 'px,' + Z.y + 'px,0) scale(' + Z.s + ')';
+  }
+
+  async function renderZoomSharp() {
+    if (!Z.active || Z.s <= Z.hiScale * 1.1) return;
+    var gen = ++Z.hiGen, s = Z.s, idx = Z.page;
+    try {
+      var page = await S.pdf.getPage(idx + 1);
+      var base = page.getViewport({ scale: 1 });
+      var dpr = Math.min(window.devicePixelRatio || 1, 3);
+      var scale = Math.min(Z.W / base.width, Z.H / base.height) * dpr * s;
+      var px = base.width * base.height * scale * scale;
+      if (px > MAX_ZOOM_PIXELS) scale *= Math.sqrt(MAX_ZOOM_PIXELS / px);
+      var vp = page.getViewport({ scale: scale });
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.floor(vp.width));
+      canvas.height = Math.max(1, Math.floor(vp.height));
+      await page.render({ canvas: canvas, viewport: vp, background: '#ffffff' }).promise;
+      var blob = await new Promise(function (res) { canvas.toBlob(res, 'image/jpeg', 0.92); });
+      canvas.width = canvas.height = 0;
+      if (gen !== Z.hiGen || !Z.active || !blob) return;
+      var url = URL.createObjectURL(blob);
+      var old = Z.hiUrl;
+      Z.hiUrl = url;
+      Z.hiScale = s;
+      Z.img.src = url;
+      if (old) setTimeout(function () { URL.revokeObjectURL(old); }, 500);
+    } catch (err) {
+      log('warn', 'zoom render: ' + err.message);
+    }
+  }
+
   // ------------------------- taps -------------------------
   // Quick taps: left 28% = previous, right 28% = next, middle = toggle reader controls.
   // Swipes and corner drags are handled by page-flip itself (with the curl animation).
@@ -456,5 +660,6 @@
     }
   }
 
+  setupZoom();
   boot();
 })();

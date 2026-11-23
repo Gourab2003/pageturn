@@ -11,7 +11,6 @@ interface Props {
   onNext: () => void;
 }
 
-// Phase 4 adds the page scrubber slider and bookmark button here.
 export function ReaderBottomBar({ page, totalPages, theme, onPrev, onNext }: Props) {
   const insets = useSafeAreaInsets();
   const pct = totalPages ? Math.round((page / totalPages) * 100) : 0;

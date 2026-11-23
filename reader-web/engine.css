@@ -85,3 +85,36 @@ html, body {
 .page.back::after {
   background: linear-gradient(to left, var(--crease) 0%, rgba(0, 0, 0, 0) 6%);
 }
+
+/* Pinch-zoom layer (covers the book while zoomed) */
+#zoom {
+  position: fixed;
+  inset: 0;
+  display: none;
+  z-index: 50;
+  overflow: hidden;
+  background: var(--bg);
+  touch-action: none;
+}
+#zoom .zpage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  background: var(--paper);
+  isolation: isolate;
+  filter: var(--book-filter);
+  will-change: transform;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.25);
+}
+#zoom .zpage img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: var(--page-filter);
+  mix-blend-mode: var(--page-blend);
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
